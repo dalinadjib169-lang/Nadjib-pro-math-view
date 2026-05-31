@@ -100,14 +100,14 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
         const data = docSnap.data();
         setSettings(prev => ({
           ...prev,
-          welcomeMessage: data.welcomeMessage || prev.welcomeMessage,
-          profileImageUrl: data.profileImageUrl || prev.profileImageUrl,
-          geminiKey1: data.geminiKey1 || prev.geminiKey1 || "",
-          geminiKey2: data.geminiKey2 || prev.geminiKey2 || "",
-          geminiKey3: data.geminiKey3 || prev.geminiKey3 || "",
-          selectedModel: data.selectedModel || prev.selectedModel,
-          cloudinaryCloudName: data.cloudinaryCloudName || prev.cloudinaryCloudName,
-          cloudinaryUploadPreset: data.cloudinaryUploadPreset || prev.cloudinaryUploadPreset
+          welcomeMessage: data.welcomeMessage !== undefined ? data.welcomeMessage : prev.welcomeMessage,
+          profileImageUrl: data.profileImageUrl !== undefined ? data.profileImageUrl : prev.profileImageUrl,
+          geminiKey1: data.geminiKey1 !== undefined ? data.geminiKey1 : "",
+          geminiKey2: data.geminiKey2 !== undefined ? data.geminiKey2 : "",
+          geminiKey3: data.geminiKey3 !== undefined ? data.geminiKey3 : "",
+          selectedModel: data.selectedModel !== undefined ? data.selectedModel : prev.selectedModel,
+          cloudinaryCloudName: data.cloudinaryCloudName !== undefined ? data.cloudinaryCloudName : prev.cloudinaryCloudName,
+          cloudinaryUploadPreset: data.cloudinaryUploadPreset !== undefined ? data.cloudinaryUploadPreset : prev.cloudinaryUploadPreset
         }));
       } else {
         // If document doesn't exist, bootstrap it with defaults for Dali Nadjib

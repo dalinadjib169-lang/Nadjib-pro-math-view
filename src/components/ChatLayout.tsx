@@ -37,9 +37,13 @@ import {
   RefreshCw,
   LogOut,
   HelpCircle,
-  X
+  X,
+  LineChart,
+  LayoutGrid,
+  MessageSquare
 } from "lucide-react";
 import { Message, GlobalSettings } from "../types";
+import FunctionAnalyzer from "./FunctionAnalyzer";
 
 interface ChatLayoutProps {
   onOpenAdmin: () => void;
@@ -57,6 +61,9 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
     cloudinaryCloudName: "doaxziqm7",
     cloudinaryUploadPreset: "nadjib dali"
   });
+
+  // Cloudinary Cloud Settings
+  const [activeTab, setActiveTab] = useState<"dual" | "chat" | "plotter">("dual");
 
   // Local Chat Messages
   const [messages, setMessages] = useState<Message[]>([]);
@@ -94,19 +101,26 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
     };
   }, []);
 
-  // Set initial welcome state
+  // Set initial welcome state or update it if welcomeMessage changes realtime
   useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([
-        {
-          id: "welcome",
-          sender: "assistant",
-          text: settings.welcomeMessage,
-          createdAt: new Date().toISOString()
-        }
-      ]);
-    }
-  }, [settings.welcomeMessage, messages.length]);
+    setMessages(prev => {
+      const welcomeExists = prev.some(m => m.id === "welcome");
+      if (welcomeExists) {
+        return prev.map(m => m.id === "welcome" ? { ...m, text: settings.welcomeMessage } : m);
+      }
+      if (prev.length === 0) {
+        return [
+          {
+            id: "welcome",
+            sender: "assistant",
+            text: settings.welcomeMessage,
+            createdAt: new Date().toISOString()
+          }
+        ];
+      }
+      return prev;
+    });
+  }, [settings.welcomeMessage]);
 
   // Scroll to bottom of chat
   useEffect(() => {
@@ -157,6 +171,109 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
       utterance.lang = "ar-DZ"; // Algerian or Arabic format
       utterance.rate = 0.95;
       window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const submitRawQuery = async (queryText: string) => {
+    if (!queryText.trim()) return;
+
+    setLoading(true);
+    const userMsgId = Date.now().toString();
+    const newUserMsg: Message = {
+      id: userMsgId,
+      sender: "user",
+      text: queryText,
+      createdAt: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, newUserMsg]);
+
+    try {
+      if (currentUser) {
+        const sessionRef = doc(db, "sessions", currentUser.uid);
+        await setDoc(sessionRef, {
+          userId: currentUser.uid,
+          userName: currentUser.displayName || currentUser.email || "طالب نجيب",
+          createdAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString()
+        }, { merge: true });
+
+        await addDoc(collection(db, "sessions", currentUser.uid, "messages"), {
+          sender: "user",
+          text: queryText,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (dbErr) {
+      console.warn("Could not write msg to firestore directly:", dbErr);
+    }
+
+    try {
+      const apiHistory = messages
+        .filter(m => m.id !== "welcome")
+        .map(m => ({
+          sender: m.sender,
+          text: m.text
+        }));
+
+      const apiRes = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: queryText,
+          history: apiHistory
+        })
+      });
+
+      if (!apiRes.ok) {
+        throw new Error("API conversation returned an error status");
+      }
+
+      const resData = await apiRes.json();
+      const answerText = resData.text || "عذراً يا بني، وقع خطأ في معالجة الإجابة. أعد المحاولة.";
+      const provider = resData.provider || "الذكاء الاصطناعي الخاص بداالي";
+
+      setActiveProvider(provider);
+
+      const botMsgId = (Date.now() + 1).toString();
+      const newBotMsg: Message = {
+        id: botMsgId,
+        sender: "assistant",
+        text: answerText,
+        createdAt: new Date().toISOString(),
+        providerUsed: provider
+      };
+
+      setMessages(prev => [...prev, newBotMsg]);
+
+      if (!isMuted) {
+        speakText(answerText);
+      }
+
+      if (currentUser) {
+        await addDoc(collection(db, "sessions", currentUser.uid, "messages"), {
+          sender: "assistant",
+          text: answerText,
+          createdAt: new Date().toISOString(),
+          providerUsed: provider
+        });
+      }
+
+    } catch (err: any) {
+      console.error("Chat Call Failed:", err);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          sender: "assistant",
+          text: "الاستاذ دالي: بارك الله فيك يا بني، عذراً هناك خلل مؤقت في مفاتيح الذكاء الاصطناعي (Gemini) حالياً. أستاذك دالي يحاول إصلاحه الآن. صلي على محمد و عاود التجربة بعد لحظات.",
+          createdAt: new Date().toISOString()
+        }
+      ]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -362,7 +479,7 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
     <div className="flex flex-col h-[calc(100vh-64px)] bg-brand-bg font-sans" dir="rtl">
       
       {/* Top Banner Grid */}
-      <header className="bg-brand-card/95 backdrop-blur-md border-b border-brand-border px-4 py-3 flex items-center justify-between shadow-lg">
+      <header className="bg-brand-card/95 backdrop-blur-md border-b border-brand-border px-4 py-3 flex items-center justify-between shadow-lg shrink-0">
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-11 h-11 rounded-full overflow-hidden border-2 border-brand-green shadow-inner bg-brand-bg">
@@ -458,195 +575,334 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
         </div>
       </header>
 
-      {/* Main chat interface messages area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-brand-bg">
-        <div className="max-w-4xl mx-auto space-y-4">
+      {/* Re-designed Tab Bar Selection Row */}
+      <div className="bg-brand-card border-b border-brand-border px-4 py-2 flex items-center justify-between gap-3 overflow-x-auto text-xs font-bold leading-none select-none shrink-0" dir="rtl">
+        <div className="flex items-center gap-1 bg-brand-bg p-1.5 rounded-2xl border border-brand-border">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("dual");
+              setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 150);
+            }}
+            className={`px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all text-xs cursor-pointer ${
+              activeTab === "dual"
+                ? "bg-brand-emerald/15 text-brand-emerald border border-brand-emerald/20 font-black"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <LayoutGrid className="w-4 h-4" />
+            <span>الوضع المزدوج الذكي 💻</span>
+          </button>
           
-          {messages.map((msg) => {
-            const isUser = msg.sender === "user";
-            const isWelcome = msg.id === "welcome";
-            return (
-              <div
-                key={msg.id}
-                className={`flex gap-3 animate-slide-up ${isUser ? "justify-end" : "justify-start"}`}
-              >
-                {/* Professor profile pic for AI answers */}
-                {!isUser && (
-                  <div className="w-8 h-8 md:w-10 h-10 rounded-full overflow-hidden border border-brand-green bg-brand-card shadow-md flex-shrink-0">
-                    <img
-                      src={settings.profileImageUrl}
-                      alt="دالي"
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = '/file_00000000b2a07246a9f99a38ebc67182.png';
-                      }}
-                    />
-                  </div>
-                )}
+          <button
+            type="button"
+            onClick={() => setActiveTab("plotter")}
+            className={`px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all text-xs cursor-pointer ${
+              activeTab === "plotter"
+                ? "bg-teal-500/15 text-teal-400 border border-teal-500/20 font-black"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <LineChart className="w-4 h-4" />
+            <span>دراسة ورسم الدوال 📈</span>
+          </button>
 
-                {/* Bubble card */}
-                <div
-                  className={`max-w-[85%] rounded-2xl p-4 shadow-md ${
-                    isUser
-                      ? "bg-brand-green text-white font-semibold rounded-tl-none text-right shadow-lg shadow-brand-green/20 border border-brand-green/30"
-                      : isWelcome
-                        ? "bg-brand-card border border-brand-border border-r-4 border-r-brand-green rounded-tr-none text-right"
-                        : "bg-brand-card border border-brand-border border-r-2 border-r-slate-500 rounded-tr-none text-right"
-                  }`}
-                >
-                  <div className="text-xs text-slate-400/85 mb-1.5 flex items-center gap-1.5 justify-end">
-                    {msg.providerUsed && (
-                      <span className="bg-brand-bg text-brand-emerald text-[9px] px-1.5 py-0.5 rounded font-mono font-bold border border-brand-border">
-                        {msg.providerUsed}
-                      </span>
-                    )}
-                    {isWelcome && (
-                      <span className="bg-brand-emerald/10 text-brand-emerald text-[9px] px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider">
-                        System Welcome
-                      </span>
-                    )}
-                    <Clock className="w-3 h-3 text-slate-500" />
-                    <span className="font-mono text-[11px]">{new Date(msg.createdAt).toLocaleTimeString("ar-DZ", { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-
-                  <div className="space-y-1 text-gray-200">
-                    {formatTextWithJSX(msg.text)}
-                  </div>
-                </div>
-
-                {/* Student generic avatar for user */}
-                {isUser && (
-                  <div className="w-8 h-8 md:w-10 h-10 rounded-full border border-brand-border bg-brand-card text-brand-emerald flex items-center justify-center flex-shrink-0 shadow-md">
-                    <UserIcon className="w-4 h-4 md:w-5 h-5 text-brand-emerald" />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* AI generating answer loader */}
-          {loading && (
-            <div className="flex gap-3 justify-start">
-              <div className="w-8 h-8 md:w-10 h-10 rounded-full overflow-hidden border border-brand-green bg-brand-card shadow-md flex-shrink-0 animate-pulse">
-                <img
-                  src={settings.profileImageUrl}
-                  alt="دالي"
-                  className="w-full h-full object-cover animate-pulse"
-                />
-              </div>
-
-              <div className="bg-brand-card border border-brand-border rounded-2xl rounded-tr-none p-4 shadow-md max-w-sm">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <RefreshCw className="w-4 h-4 text-brand-emerald animate-spin" />
-                  <span className="text-xs font-bold animate-pulse">الأستاذ دالي يكتب لك الشرح الآن... صلي على محمد...</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div ref={scrollRef} />
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("chat");
+              setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 150);
+            }}
+            className={`px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all text-xs cursor-pointer ${
+              activeTab === "chat"
+                ? "bg-brand-emerald/10 text-white border border-brand-border font-black"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>محادثة الأستاذ دالي 💬</span>
+          </button>
         </div>
+        <span className="text-[10px] text-slate-500 font-sans hidden md:inline-block"> صلي على محمد • ادرس الدوال وتحاور مع الأستاذ في آن واحد!</span>
       </div>
 
-      {/* Checking block - "سؤال الفهم" active interactive dashboard helper */}
-      {currentCheckQuestion && !loading && (
-        <div className="bg-brand-green/10 border-t border-brand-border px-4 py-2.5 text-right w-full">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-brand-green/20 rounded-lg text-brand-emerald">
-                <BookOpen className="w-4 h-4" />
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                <strong className="text-brand-emerald font-black ml-1">سؤال الفهم التفاعلي:</strong> 
-                {currentCheckQuestion.replace(/باه نشوفك إذا فهمت مليح، جاوبني على هذا السؤال:|باه نشوفك إذا فهمت هذي النقطة مليح، قولي:|سؤال:/i, "").trim()}
-              </p>
-            </div>
-            
-            <span className="bg-brand-emerald/10 border border-brand-emerald/20 text-brand-emerald text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap uppercase tracking-wider">
-              جاهز للحل ✏️
-            </span>
+      {/* View Conditional Renderers */}
+      {/* 1. Plotter Only View */}
+      {activeTab === "plotter" && (
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-brand-bg">
+          <div className="max-w-7xl mx-auto">
+            <FunctionAnalyzer onAskDali={submitRawQuery} isDaliAnswering={loading} />
           </div>
         </div>
       )}
 
-      {/* Sticky Bottom Form and input box */}
-      <footer className="bg-brand-card border-t border-brand-border px-4 py-3.5 shadow-2xl">
-        <div className="max-w-4xl mx-auto">
+      {/* 2. Chat Only View */}
+      {activeTab === "chat" && (
+        <div className="flex-1 flex flex-col overflow-hidden bg-brand-bg justify-between">
           
-          {/* Thumb preview for attached photos to analyze */}
-          {attachedImage && (
-            <div className="bg-brand-bg border border-brand-border p-2 rounded-xl mb-3 flex items-center justify-between gap-3 animate-slide-up max-w-xs shadow-md">
-              <div className="flex items-center gap-2">
-                <div className="w-12 h-12 rounded-lg border border-brand-border overflow-hidden bg-brand-card">
-                  <img referrerPolicy="no-referrer" src={attachedImage} alt="Attachment" className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-brand-emerald">مرفق جاهز للأستاذ دالي 📸</p>
-                  <p className="text-[10px] text-slate-500 font-mono">Cloudinary Sec</p>
-                </div>
-              </div>
+          {/* Main chat messages region */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="max-w-4xl mx-auto space-y-4">
               
-              <button
-                onClick={() => setAttachedImage("")}
-                className="text-slate-400 hover:text-red-400 p-1 rounded-full hover:bg-brand-bg"
-                title="إزالة المرفق"
-              >
-                <X className="w-4.5 h-4.5" />
-              </button>
+              {messages.map((msg) => {
+                const isUser = msg.sender === "user";
+                const isWelcome = msg.id === "welcome";
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex gap-3 animate-slide-up ${isUser ? "justify-end" : "justify-start"}`}
+                  >
+                    {!isUser && (
+                      <div className="w-8 h-8 md:w-10 h-10 rounded-full overflow-hidden border border-brand-green bg-brand-card shadow-md flex-shrink-0">
+                        <img
+                          src={settings.profileImageUrl}
+                          alt="دالي"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = '/file_00000000b2a07246a9f99a38ebc67182.png';
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    <div
+                      className={`max-w-[85%] rounded-2xl p-4 shadow-md ${
+                        isUser
+                          ? "bg-brand-green text-white font-semibold rounded-tl-none text-right shadow-lg shadow-brand-green/20 border border-brand-green/30"
+                          : isWelcome
+                            ? "bg-brand-card border border-brand-border border-r-4 border-r-brand-green rounded-tr-none text-right"
+                            : "bg-brand-card border border-brand-border border-r-2 border-r-slate-500 rounded-tr-none text-right"
+                      }`}
+                    >
+                      <div className="text-xs text-slate-400/85 mb-1.5 flex items-center gap-1.5 justify-end">
+                        {msg.providerUsed && (
+                          <span className="bg-brand-bg text-brand-emerald text-[9px] px-1.5 py-0.5 rounded font-mono font-bold border border-brand-border">
+                            {msg.providerUsed}
+                          </span>
+                        )}
+                        {isWelcome && (
+                          <span className="bg-brand-emerald/10 text-brand-emerald text-[9px] px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider">
+                            Welcome
+                          </span>
+                        )}
+                        <Clock className="w-3 h-3 text-slate-500" />
+                        <span className="font-mono text-[11px]">{new Date(msg.createdAt).toLocaleTimeString("ar-DZ", { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+
+                      <div className="space-y-1 text-gray-200">
+                        {formatTextWithJSX(msg.text)}
+                      </div>
+                    </div>
+
+                    {isUser && (
+                      <div className="w-8 h-8 md:w-10 h-10 rounded-full border border-brand-border bg-brand-card text-brand-emerald flex items-center justify-center flex-shrink-0 shadow-md">
+                        <UserIcon className="w-4 h-4 md:w-5 h-5 text-brand-emerald" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {loading && (
+                <div className="flex gap-3 justify-start">
+                  <div className="w-8 h-8 md:w-10 h-10 rounded-full overflow-hidden border border-brand-green bg-brand-card shadow-md flex-shrink-0 animate-pulse">
+                    <img
+                      src={settings.profileImageUrl}
+                      alt="دالي"
+                      className="w-full h-full object-cover animate-pulse"
+                    />
+                  </div>
+
+                  <div className="bg-brand-card border border-brand-border rounded-2xl rounded-tr-none p-4 shadow-md max-w-sm">
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <RefreshCw className="w-4 h-4 text-brand-emerald animate-spin" />
+                      <span className="text-xs font-bold animate-pulse">الأستاذ دالي يكتب لك الشرح الآن... صلي على محمد...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={scrollRef} />
+            </div>
+          </div>
+
+          {/* Interactive Question check section */}
+          {currentCheckQuestion && !loading && (
+            <div className="bg-brand-green/10 border-t border-brand-border px-4 py-2.5 text-right w-full shrink-0">
+              <div className="max-w-4xl mx-auto flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-brand-green/20 rounded-lg text-brand-emerald">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    <strong className="text-brand-emerald font-black ml-1">سؤال الفهم التفاعلي:</strong> 
+                    {currentCheckQuestion.replace(/باه نشوفك إذا فهمت مليح، جاوبني على هذا السؤال:|باه نشوفك إذا فهمت هذي النقطة مليح، قولي:|سؤال:/i, "").trim()}
+                  </p>
+                </div>
+                <span className="bg-brand-emerald/10 border border-brand-emerald/20 text-brand-emerald text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap uppercase tracking-wider">
+                  جاهز للحل ✏️
+                </span>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleSendMessage} className="flex gap-2">
-            
-            {/* Input field */}
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="اسأل الأستاذ دالي نجيب في أي مجال (رياضيات، برمجيات، علوم...)"
-                disabled={loading}
-                className="w-full bg-brand-bg border border-brand-border focus:border-brand-emerald text-slate-100 placeholder:text-slate-500 rounded-xl pr-4 pl-12 py-3.5 text-sm outline-none transition-all text-right shadow-inner"
-              />
+          {/* Standard Form entry footer */}
+          <footer className="bg-brand-card border-t border-brand-border px-4 py-3.5 shadow-2xl shrink-0">
+            <div className="max-w-4xl mx-auto">
+              
+              {attachedImage && (
+                <div className="bg-brand-bg border border-brand-border p-2 rounded-xl mb-3 flex items-center justify-between gap-3 animate-slide-up max-w-xs shadow-md">
+                  <div className="flex items-center gap-2">
+                    <div className="w-12 h-12 rounded-lg border border-brand-border overflow-hidden bg-brand-card">
+                      <img referrerPolicy="no-referrer" src={attachedImage} alt="Attachment" className="w-full h-full object-cover" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-brand-emerald">مرفق جاهز للأستاذ دالي 📸</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setAttachedImage("")}
+                    className="text-slate-400 hover:text-red-400 p-1.5 rounded-full hover:bg-brand-bg"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
 
-              {/* Photo Input Selector integration */}
-              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                <label className="p-2 hover:bg-brand-border rounded-lg text-slate-400 hover:text-brand-emerald transition-all cursor-pointer">
-                  {uploadingAttachment ? (
-                    <RefreshCw className="w-5 h-5 text-brand-emerald animate-spin" />
-                  ) : (
-                    <Paperclip className="w-5 h-5" />
-                  )}
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <div className="relative flex-1">
                   <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAttachmentUpload}
-                    disabled={uploadingAttachment || loading}
-                    className="hidden"
+                    type="text"
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    placeholder="اسأل الأستاذ دالي نجيب في أي مجال (رياضيات، برمجيات، علوم...)"
+                    disabled={loading}
+                    className="w-full bg-brand-bg border border-brand-border focus:border-brand-emerald text-slate-100 placeholder:text-slate-500 rounded-xl pr-4 pl-12 py-3.5 text-sm outline-none text-right shadow-inner"
                   />
-                </label>
-              </div>
+                  <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <label className="p-2 hover:bg-brand-border rounded-lg text-slate-400 hover:text-brand-emerald transition-all cursor-pointer">
+                      {uploadingAttachment ? (
+                        <RefreshCw className="w-5 h-5 text-brand-emerald animate-spin" />
+                      ) : (
+                        <Paperclip className="w-5 h-5" />
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAttachmentUpload}
+                        disabled={uploadingAttachment || loading}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || uploadingAttachment || (!inputValue.trim() && !attachedImage)}
+                  className="bg-brand-green hover:bg-[#007a3d] text-white disabled:bg-brand-border disabled:text-slate-600 font-extrabold px-6 rounded-xl transition-all flex items-center justify-center gap-1.5 border border-brand-green/30 cursor-pointer text-sm"
+                >
+                  <span>إرسال</span>
+                  <Send className="w-3.5 h-3.5 scale-x-[-1]" />
+                </button>
+              </form>
+              <p className="text-[10px] text-slate-500 text-center mt-2.5">
+                "لا تنسونا من صالح دعائكم" • الأستاذ دالي نجيب 🇩🇿
+              </p>
+            </div>
+          </footer>
+        </div>
+      )}
+
+      {/* 3. Dual Workspace Mode (Split layout on desktop, responsive layout fallback) */}
+      {activeTab === "dual" && (
+        <div className="flex-1 grid grid-cols-1 xl:grid-cols-12 overflow-hidden bg-brand-bg">
+          
+          {/* Plotter solver pane */}
+          <div className="col-span-12 xl:col-span-8 overflow-y-auto p-4 border-l border-brand-border/60">
+            <FunctionAnalyzer onAskDali={submitRawQuery} isDaliAnswering={loading} />
+          </div>
+
+          {/* Quick Chat Pane aligned side-by-side */}
+          <div className="col-span-12 xl:col-span-4 flex flex-col overflow-hidden bg-[#0a101f] border-r border-brand-border/30 h-[450px] xl:h-full">
+            
+            {/* Split screen scrolling listing room */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.map((msg) => {
+                const isUser = msg.sender === "user";
+                const isWelcome = msg.id === "welcome";
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex gap-2.5 animate-slide-up ${isUser ? "justify-end" : "justify-start"}`}
+                  >
+                    {!isUser && (
+                      <div className="w-8 h-8 rounded-full overflow-hidden border border-brand-green bg-brand-card flex-shrink-0">
+                        <img
+                          src={settings.profileImageUrl}
+                          alt="دالي"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = '/file_00000000b2a07246a9f99a38ebc67182.png';
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    <div
+                      className={`max-w-[85%] rounded-xl p-3.5 shadow-sm text-xs md:text-sm ${
+                        isUser
+                          ? "bg-brand-green text-white font-semibold rounded-tl-none text-right"
+                          : "bg-brand-card border border-brand-border rounded-tr-none text-right"
+                      }`}
+                    >
+                      {msg.providerUsed && (
+                        <span className="bg-brand-bg text-brand-emerald text-[8px] px-1.5 py-0.5 rounded font-mono font-bold block mb-1.5 w-max border border-brand-border">
+                          {msg.providerUsed}
+                        </span>
+                      )}
+                      <div className="space-y-1 text-slate-100 leading-relaxed font-sans">
+                        {formatTextWithJSX(msg.text)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {loading && (
+                <div className="flex gap-2 justify-start items-center p-2 bg-brand-card/40 border border-brand-border rounded-xl">
+                  <RefreshCw className="w-4 h-4 text-brand-emerald animate-spin" />
+                  <span className="text-[10px] text-slate-400 font-bold animate-pulse">الأستاذ دالي يشرح لك الآن... صلي على محمد</span>
+                </div>
+              )}
+              <div ref={scrollRef} />
             </div>
 
-            {/* Send Button */}
-            <button
-              type="submit"
-              disabled={loading || uploadingAttachment || (!inputValue.trim() && !attachedImage)}
-              className="bg-brand-green hover:bg-[#007a3d] text-white disabled:bg-brand-border disabled:text-slate-600 font-extrabold px-6 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-brand-green/20 border border-brand-green/30 cursor-pointer text-sm"
-            >
-              <span>إرسال</span>
-              <Send className="w-3.5 h-3.5 scale-x-[-1]" />
-            </button>
+            {/* In-tab mini query submission box footer */}
+            <footer className="bg-brand-card border-t border-brand-border/80 px-3 py-3 shrink-0">
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder="اسأل الأستاذ دالي عن الدالة أو أي خطوة..."
+                  disabled={loading}
+                  className="flex-1 bg-brand-bg border border-brand-border text-slate-100 placeholder:text-slate-500 rounded-xl px-3 py-2.5 text-xs outline-none text-right focus:border-brand-emerald transition-all"
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !inputValue.trim()}
+                  className="bg-brand-green hover:bg-[#007a3d] text-white disabled:bg-brand-border text-xs font-bold px-4 rounded-xl border border-brand-green/20 transition-all cursor-pointer"
+                >
+                  <span>أرسل 💬</span>
+                </button>
+              </form>
+            </footer>
 
-          </form>
-
-          {/* Sincere prayer notation at bottom */}
-          <p className="text-[10px] text-slate-500 text-center mt-2.5 font-serif italic tracking-wide">
-            "لا تنسونا من صالح دعائكم" • الأستاذ دالي نجيب 🇩🇿
-          </p>
+          </div>
 
         </div>
-      </footer>
+      )}
 
     </div>
   );
