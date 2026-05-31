@@ -57,6 +57,8 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
     geminiKey1: "",
     geminiKey2: "",
     geminiKey3: "",
+    groqKey: "",
+    openrouterKey: "",
     selectedModel: "auto",
     cloudinaryCloudName: "doaxziqm7",
     cloudinaryUploadPreset: "nadjib dali"
@@ -71,6 +73,8 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
   const [showKey1, setShowKey1] = useState(false);
   const [showKey2, setShowKey2] = useState(false);
   const [showKey3, setShowKey3] = useState(false);
+  const [showGroq, setShowGroq] = useState(false);
+  const [showOpenRouter, setShowOpenRouter] = useState(false);
 
   // Cloudinary Upload progress
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -105,6 +109,8 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
           geminiKey1: data.geminiKey1 !== undefined ? data.geminiKey1 : "",
           geminiKey2: data.geminiKey2 !== undefined ? data.geminiKey2 : "",
           geminiKey3: data.geminiKey3 !== undefined ? data.geminiKey3 : "",
+          groqKey: data.groqKey !== undefined ? data.groqKey : "",
+          openrouterKey: data.openrouterKey !== undefined ? data.openrouterKey : "",
           selectedModel: data.selectedModel !== undefined ? data.selectedModel : prev.selectedModel,
           cloudinaryCloudName: data.cloudinaryCloudName !== undefined ? data.cloudinaryCloudName : prev.cloudinaryCloudName,
           cloudinaryUploadPreset: data.cloudinaryUploadPreset !== undefined ? data.cloudinaryUploadPreset : prev.cloudinaryUploadPreset
@@ -391,9 +397,13 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
                   ? "Gemini Key 1 فقط 🔑" 
                   : settings.selectedModel === "key2" 
                     ? "Gemini Key 2 فقط 🔑" 
-                    : "Gemini Key 3 فقط 🔑"}
+                    : settings.selectedModel === "key3"
+                      ? "Gemini Key 3 فقط 🔑"
+                      : settings.selectedModel === "groq"
+                        ? "Groq Key فقط ⚡"
+                        : "OpenRouter Key فقط 🚀"}
             </p>
-            <p className="text-xs text-slate-500 mt-2">تدرج آمن بين مفاتيح Gemini لتجنب الفشل والضغط</p>
+            <p className="text-xs text-slate-500 mt-2">تدرج آمن ودوران مستمر لضمان عدم توقف الخدمة أبدًا</p>
           </div>
         </section>
 
@@ -494,18 +504,62 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
                     placeholder="AIzaSy..."
                   />
                 </div>
+
+                {/* Groq Key */}
+                <div className="pt-2 border-t border-brand-border/40">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-slate-300 text-xs font-semibold text-orange-400">Groq API Key (مفتاح غروك الفائق - سرعة خارقة) ⚡</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowGroq(!showGroq)}
+                      className="text-slate-400 hover:text-brand-emerald text-xs flex items-center gap-1 transition-all"
+                    >
+                      {showGroq ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showGroq ? "إخفاء" : "عرض"}
+                    </button>
+                  </div>
+                  <input
+                    type={showGroq ? "text" : "password"}
+                    value={settings.groqKey || ""}
+                    onChange={(e) => setSettings({ ...settings, groqKey: e.target.value })}
+                    className="w-full bg-brand-bg border border-brand-border focus:border-brand-emerald rounded-xl px-4 py-2.5 text-slate-100 font-mono text-sm leading-relaxed outline-none transition-all ltr"
+                    placeholder="gsk_..."
+                  />
+                </div>
+
+                {/* OpenRouter Key */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-slate-300 text-xs font-semibold text-pink-400">OpenRouter API Key (مفتاح أوبن روتر الاحتياطي الشامل) 🚀</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowOpenRouter(!showOpenRouter)}
+                      className="text-slate-400 hover:text-brand-emerald text-xs flex items-center gap-1 transition-all"
+                    >
+                      {showOpenRouter ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showOpenRouter ? "إخفاء" : "عرض"}
+                    </button>
+                  </div>
+                  <input
+                    type={showOpenRouter ? "text" : "password"}
+                    value={settings.openrouterKey || ""}
+                    onChange={(e) => setSettings({ ...settings, openrouterKey: e.target.value })}
+                    className="w-full bg-brand-bg border border-brand-border focus:border-brand-emerald rounded-xl px-4 py-2.5 text-slate-100 font-mono text-sm leading-relaxed outline-none transition-all ltr"
+                    placeholder="sk-or-v1-..."
+                  />
+                </div>
               </div>
 
               {/* Intelligent keys rotation config */}
               <div className="pt-4 border-t border-brand-border">
                 <label className="block text-slate-300 font-bold mb-2 text-sm">وضع دوران المفاتيح الذكي (Rotation Style)</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   <label 
                     className={`border rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
                       settings.selectedModel === "auto" 
                         ? "border-brand-emerald bg-brand-emerald/10 text-brand-emerald" 
                         : "border-brand-border hover:border-brand-emerald bg-brand-bg text-slate-400"
-                    }`}
+                     }`}
                   >
                     <input
                       type="radio"
@@ -516,10 +570,52 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
                       className="sr-only"
                     />
                     <RefreshCw className="w-5 h-5 mb-1 animate-spin-slow text-brand-emerald" />
-                    <span className="font-bold text-xs block">تبديل تلقائي (Auto)</span>
-                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">توزيع متوازن ومستمر على المفاتيح الثلاثة</span>
+                    <span className="font-bold text-xs block">تبديل تلقائي بالتناوب (Auto)</span>
+                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">دوران متناسق بين كافة المفاتيح النشطة (جيميني، غروك، أوبن روتر) لضمان عدم التوقف</span>
                   </label>
 
+                  <label 
+                    className={`border rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+                      settings.selectedModel === "groq" 
+                        ? "border-orange-500 bg-orange-500/10 text-orange-400" 
+                        : "border-brand-border hover:border-brand-emerald bg-brand-bg text-slate-400"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="modelMode"
+                      value="groq"
+                      checked={settings.selectedModel === "groq"}
+                      onChange={(e) => setSettings({ ...settings, selectedModel: e.target.value })}
+                      className="sr-only"
+                    />
+                    <RefreshCw className="w-5 h-5 mb-1 text-orange-400" />
+                    <span className="font-bold text-xs block">Groq API فقط</span>
+                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">تثبيت التشغيل على واجهة Groq فائقة السرعة</span>
+                  </label>
+
+                  <label 
+                    className={`border rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+                      settings.selectedModel === "openrouter" 
+                        ? "border-pink-500 bg-pink-500/10 text-pink-400" 
+                        : "border-brand-border hover:border-brand-emerald bg-brand-bg text-slate-400"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="modelMode"
+                      value="openrouter"
+                      checked={settings.selectedModel === "openrouter"}
+                      onChange={(e) => setSettings({ ...settings, selectedModel: e.target.value })}
+                      className="sr-only"
+                    />
+                    <RefreshCw className="w-5 h-5 mb-1 text-pink-400" />
+                    <span className="font-bold text-xs block">OpenRouter فقط</span>
+                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">تثبيت التشغيل عبر OpenRouter الشامل لدعم أقصى مرونة</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                   <label 
                     className={`border rounded-xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
                       settings.selectedModel === "key1" 
@@ -536,8 +632,8 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
                       className="sr-only"
                     />
                     <Key className="w-5 h-5 mb-1 text-brand-emerald" />
-                    <span className="font-bold text-xs block">المفتاح 1 فقط</span>
-                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">تثبيت التشغيل على مفتاح Gemini الأول فقط</span>
+                    <span className="font-bold text-xs block">Gemini Key 1 فقط</span>
+                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">مفتاح جيميني الأساسي رقم 1</span>
                   </label>
 
                   <label 
@@ -555,9 +651,9 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
                       onChange={(e) => setSettings({ ...settings, selectedModel: e.target.value })}
                       className="sr-only"
                     />
-                    <Key className="w-5 h-5 mb-1 text-teal-400" />
-                    <span className="font-bold text-xs block">المفتاح 2 فقط</span>
-                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">تثبيت التشغيل على مفتاح Gemini الثاني فقط</span>
+                    <Key className="w-5 h-5 mb-1 text-teal-400" / >
+                    <span className="font-bold text-xs block">Gemini Key 2 فقط</span>
+                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">مفتاح جيميني الاحتياطي الأول</span>
                   </label>
 
                   <label 
@@ -576,8 +672,8 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
                       className="sr-only"
                     />
                     <Key className="w-5 h-5 mb-1 text-cyan-400" />
-                    <span className="font-bold text-xs block">المفتاح 3 فقط</span>
-                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">تثبيت التشغيل على مفتاح Gemini الثالث فقط</span>
+                    <span className="font-bold text-xs block">Gemini Key 3 فقط</span>
+                    <span className="text-[9px] text-slate-500 mt-1 leading-normal">مفتاح جيميني الاحتياطي الثاني</span>
                   </label>
                 </div>
               </div>

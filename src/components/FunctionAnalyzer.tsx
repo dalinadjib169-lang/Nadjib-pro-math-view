@@ -36,8 +36,53 @@ interface FunctionAnalyzerProps {
 
 export default function FunctionAnalyzer({ onAskDali, isDaliAnswering }: FunctionAnalyzerProps) {
   // Preset function types in the Algerian curriculum
-  const [funcTemplate, setFuncTemplate] = useState<"quadratic" | "homographic" | "cubic" | "asymptotic_rational" | "parametric">("homographic");
+  const [funcTemplate, setFuncTemplate] = useState<"quadratic" | "homographic" | "cubic" | "asymptotic_rational" | "parametric" | "custom">("homographic");
   
+  // Custom formulas entries
+  const [customExpr, setCustomExpr] = useState<string>("exp(x) - 3");
+
+  const KEYS = [
+    { label: "x", value: "x", type: "var" },
+    { label: "7", value: "7", type: "num" },
+    { label: "8", value: "8", type: "num" },
+    { label: "9", value: "9", type: "num" },
+    { label: "(", value: "(", type: "sym" },
+    { label: ")", value: ")", type: "sym" },
+
+    { label: "e^x", value: "exp(x)", type: "func" },
+    { label: "4", value: "4", type: "num" },
+    { label: "5", value: "5", type: "num" },
+    { label: "6", value: "6", type: "num" },
+    { label: "+", value: "+", type: "op" },
+    { label: "-", value: "-", type: "op" },
+
+    { label: "ln", value: "ln(x)", type: "func" },
+    { label: "1", value: "1", type: "num" },
+    { label: "2", value: "2", type: "num" },
+    { label: "3", value: "3", type: "num" },
+    { label: "*", value: "*", type: "op" },
+    { label: "/", value: "/", type: "op" },
+
+    { label: "√x", value: "sqrt(x)", type: "func" },
+    { label: "0", value: "0", type: "num" },
+    { label: ".", value: ".", type: "num" },
+    { label: "1/x", value: "(1/x)", type: "func" },
+    { label: "x^2", value: "x^2", type: "func" },
+    { label: "x^3", value: "x^3", type: "func" },
+  ];
+
+  const handleKeyClick = (value: string) => {
+    setCustomExpr(prev => prev + value);
+  };
+
+  const handleActionClick = (action: "clear" | "backspace") => {
+    if (action === "clear") {
+      setCustomExpr("");
+    } else if (action === "backspace") {
+      setCustomExpr(prev => prev.slice(0, -1));
+    }
+  };
+
   // Coefficients state
   const [coeffA, setCoeffA] = useState<number>(2);
   const [coeffB, setCoeffB] = useState<number>(3);
@@ -100,6 +145,42 @@ export default function FunctionAnalyzer({ onAskDali, isDaliAnswering }: Functio
         const denom = x - coeffC;
         if (Math.abs(denom) < 0.0001) return null;
         return (paramM * x + coeffB) / denom;
+      }
+      if (funcTemplate === "custom") {
+        if (!customExpr.trim()) return null;
+        let sanitized = customExpr.toLowerCase();
+        
+        // Translate visual shortcuts
+        sanitized = sanitized.replace(/exp\(([^)]+)\)/g, "Math.exp($1)");
+        sanitized = sanitized.replace(/ln\(([^)]+)\)/g, "Math.log($1)");
+        sanitized = sanitized.replace(/sqrt\(([^)]+)\)/g, "Math.sqrt($1)");
+        
+        // exponents shortcuts translation
+        sanitized = sanitized.replace(/x\^3/g, "Math.pow(x,3)");
+        sanitized = sanitized.replace(/x\^2/g, "Math.pow(x,2)");
+        sanitized = sanitized.replace(/x\^(\d+)/g, "Math.pow(x,$1)");
+        sanitized = sanitized.replace(/\(([^)]+)\)\^2/g, "Math.pow($1,2)");
+        sanitized = sanitized.replace(/\(([^)]+)\)\^3/g, "Math.pow($1,3)");
+        
+        sanitized = sanitized.replace(/\^/g, "**");
+        sanitized = sanitized.replace(/\be\b/g, "Math.E");
+        sanitized = sanitized.replace(/log/g, "Math.log10");
+
+        // Safe client side math execution block
+        const safeEval = new Function("x", `
+          try {
+            with(Math) {
+              return ${sanitized};
+            }
+          } catch(e) {
+            return null;
+          }
+        `);
+        const val = safeEval(x);
+        if (typeof val === "number" && !isNaN(val) && isFinite(val)) {
+          return val;
+        }
+        return null;
       }
       return null;
     } catch {
@@ -283,6 +364,82 @@ export default function FunctionAnalyzer({ onAskDali, isDaliAnswering }: Functio
         { eq: `x = ${c}`, type: "vertical", desc: `مستقيم مقارب عمودي ثابت للقطب x = ${c}` }
       ];
     }
+    else if (funcTemplate === "custom") {
+      let domStr = "D = IR = ]-∞ , +∞[";
+      if (customExpr.includes("ln")) {
+        domStr = "D = ]0 , +∞[ (موجب تماماً لوجود اللوغاريتم)";
+      } else if (customExpr.includes("sqrt")) {
+        domStr = "D = [0 , +∞[ (موجب أو معدوم لوجود الجذر)";
+      } else if (customExpr.includes("/x") || customExpr.includes("1/")) {
+        domStr = "D = IR* = ]-∞ , 0[ U ]0 , +∞[ [الصفر قيمة ممنوعة]";
+      }
+
+      const calcLim = (atInf: boolean) => {
+        try {
+          const xVal = atInf ? 50 : -50;
+          const res = evaluateFunction(xVal);
+          if (res === null || isNaN(res) || !isFinite(res)) {
+            const resCloser = evaluateFunction(atInf ? 5 : 0.05);
+            if (resCloser === null || isNaN(resCloser)) return "غير معرّف";
+            return resCloser.toFixed(2);
+          }
+          if (res > 500) return "+∞";
+          if (res < -500) return "-∞";
+          return res.toFixed(2);
+        } catch {
+          return "غير معرّف";
+        }
+      };
+
+      result.domainStr = domStr;
+      result.limits = [
+        { bound: "-∞", val: calcLim(false), explanation: "نهاية عددية تقريبية للدالة المخصصة" },
+        { bound: "+∞", val: calcLim(true), explanation: "نهاية عددية تقريبية للدالة المخصصة" }
+      ];
+      result.derivativeStr = "f'(x) = [تم حسابه بيانياً وعلاقة المماس متصلة بالمنحنى لحظياً عند x0]";
+      
+      // variations scanning
+      let isInc = true;
+      let isDec = true;
+      let prevVal = evaluateFunction(-5) || 0;
+      for (let x = -4.5; x <= 5; x += 0.5) {
+        const val = evaluateFunction(x);
+        if (val !== null && !isNaN(val)) {
+          if (val > prevVal) isDec = false;
+          if (val < prevVal) isInc = false;
+          prevVal = val;
+        }
+      }
+
+      if (isInc) {
+        result.variationDirections = [{ interval: "D_f", direction: "increasing", sign: "+" }];
+      } else if (isDec) {
+        result.variationDirections = [{ interval: "D_f", direction: "decreasing", sign: "-" }];
+      } else {
+        result.variationDirections = [
+          { interval: "]-∞ , 0]", direction: "decreasing", sign: "-" },
+          { interval: "[0 , +∞[", direction: "increasing", sign: "+" }
+        ];
+      }
+
+      // numerical scanning for local extrema
+      const customExtrema: any[] = [];
+      for (let x = -4; x <= 4; x += 0.25) {
+        const prev = evaluateFunction(x - 0.1);
+        const curr = evaluateFunction(x);
+        const next = evaluateFunction(x + 0.1);
+        if (prev !== null && curr !== null && next !== null && !isNaN(prev) && !isNaN(curr) && !isNaN(next)) {
+          if (curr > prev && curr > next) {
+            customExtrema.push({ x, y: curr, type: "max", label: "ذروة محلية كبرى" });
+            if (customExtrema.length >= 2) break;
+          } else if (curr < prev && curr < next) {
+            customExtrema.push({ x, y: curr, type: "min", label: "ذروة محلية صغرى" });
+            if (customExtrema.length >= 2) break;
+          }
+        }
+      }
+      result.extrema = customExtrema;
+    }
 
     return result;
   };
@@ -441,6 +598,7 @@ export default function FunctionAnalyzer({ onAskDali, isDaliAnswering }: Functio
               <option value="homographic">تناظرية/تناسبية ((ax+b)/(cx+d))</option>
               <option value="asymptotic_rational">ناطقة تناظرية بجدار مائل (ax+b + c/(x-d))</option>
               <option value="parametric">دراسة وسيطية متحركة (f_m(x))</option>
+              <option value="custom">✍️ دالة مخصصة (أسية، لوغاريتمية، جذر، مقلوب...)</option>
             </select>
             <ChevronDown className="w-4 h-4 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
@@ -470,70 +628,140 @@ export default function FunctionAnalyzer({ onAskDali, isDaliAnswering }: Functio
                   {funcTemplate === "cubic" && `f(x) = (${coeffA})x³ + (${coeffB})x² + (${coeffC})x + (${coeffD})`}
                   {funcTemplate === "asymptotic_rational" && `f(x) = (${coeffA})x + (${coeffB}) + (${coeffC})/(x - (${coeffD}))`}
                   {funcTemplate === "parametric" && `f_m(x) = (${paramM}x + (${coeffB})) / (x - (${coeffC}))`}
+                  {funcTemplate === "custom" && `f(x) = ${customExpr || "0"}`}
                 </span>
                 <span className="text-[10px] text-slate-500 block mt-1.5 font-bold">بدون رمز ($) المزعج - متوافق 100% مع التعليم الجزائري</span>
               </div>
 
-              {/* Sliders for coefficients */}
-              <div className="space-y-3 text-right">
-                
-                {/* coeffA */}
-                <div>
-                  <div className="flex justify-between text-[11px] font-bold text-slate-300">
-                    <span>المعامل a = {coeffA}</span>
-                    <span className="font-mono text-slate-500">موجّب للتحدب</span>
+              {funcTemplate === "custom" ? (
+                <div className="space-y-4 text-right">
+                  <div className="relative">
+                    <span className="text-xs text-slate-400 block mb-1">اكتب عبارة الدالة هنا أو استعن باللوحة في الأسفل:</span>
+                    <input
+                      type="text"
+                      value={customExpr}
+                      onChange={(e) => setCustomExpr(e.target.value)}
+                      dir="ltr"
+                      className="w-full bg-slate-950 text-[#00ff7f] font-mono border border-brand-green/30 focus:border-brand-emerald rounded-xl py-2 px-3 text-sm font-bold text-center outline-none transition-all shadow-md placeholder-slate-700"
+                      placeholder="امثلة: exp(x) - 3 or ln(x)"
+                    />
                   </div>
-                  <input
-                    type="range" min="-5" max="5" step="1"
-                    value={coeffA}
-                    onChange={(e) => setCoeffA(parseInt(e.target.value) || 1)}
-                    className="w-full accent-brand-emerald bg-brand-bg h-1 rounded-lg"
-                  />
-                </div>
 
-                {/* coeffB */}
-                <div>
-                  <div className="flex justify-between text-[11px] font-bold text-slate-300">
-                    <span>المعامل b = {coeffB}</span>
+                  {/* Math Tactile Keyboard */}
+                  <div className="bg-slate-950 p-2 text-right rounded-xl border border-brand-green/20">
+                    <div className="grid grid-cols-6 gap-1">
+                      {KEYS.map((key) => (
+                        <button
+                          key={key.label}
+                          type="button"
+                          onClick={() => handleKeyClick(key.value)}
+                          className={`py-2 text-[11px] font-black font-mono rounded-lg transition-all transform active:scale-95 text-center flex items-center justify-center cursor-pointer ${
+                            key.type === "func"
+                              ? "bg-brand-green/30 hover:bg-brand-green/50 text-[#00ff7f] border border-brand-green/40 shadow"
+                              : key.type === "var"
+                              ? "bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 border border-amber-600/40 shadow"
+                              : key.type === "op" || key.type === "sym"
+                              ? "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+                              : "bg-slate-900 hover:bg-slate-800 text-white border border-slate-800"
+                          }`}
+                        >
+                          {key.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => handleActionClick("backspace")}
+                        className="py-1.5 bg-red-950/40 hover:bg-red-950/60 border border-red-500/30 text-red-400 font-bold text-[10px] rounded-lg transition-all cursor-pointer"
+                      >
+                        حذف حرف ⌫
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleActionClick("clear")}
+                        className="py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold text-[10px] rounded-lg transition-all cursor-pointer"
+                      >
+                        مسح الكل 🗑️
+                      </button>
+                    </div>
+
+                    {/* Quick Guide tips */}
+                    <div className="mt-2 text-[10px] text-slate-400 text-right leading-relaxed border-t border-slate-900 pt-1.5 font-bold">
+                      <span className="text-brand-emerald">💡 إرشادات سريعة للرموز:</span>
+                      <ul className="list-disc list-inside space-y-0.5 mt-0.5 pr-1 text-slate-400">
+                        <li>الدالة الأسية نكتبها: <code className="text-emerald-400">exp(x)</code></li>
+                        <li>الدالة اللوغاريتمية نكتبها: <code className="text-emerald-400">ln(x)</code></li>
+                        <li>الجذر التربيعي للـ x نكتبه: <code className="text-emerald-400">sqrt(x)</code></li>
+                        <li>الكسر أو المقلوب نكتبه: <code className="text-emerald-400">1/x</code></li>
+                        <li>الضرب يتم برمز <code className="text-emerald-400">*</code> والقسمة بـ <code className="text-emerald-400">/</code></li>
+                      </ul>
+                    </div>
                   </div>
-                  <input
-                    type="range" min="-5" max="5" step="1"
-                    value={coeffB}
-                    onChange={(e) => setCoeffB(parseInt(e.target.value) || 0)}
-                    className="w-full accent-brand-emerald bg-brand-bg h-1 rounded-lg"
-                  />
                 </div>
-
-                {/* coeffC */}
-                {funcTemplate !== "quadratic" && (
+              ) : (
+                /* Sliders for coefficients */
+                <div className="space-y-3 text-right">
+                  
+                  {/* coeffA */}
                   <div>
                     <div className="flex justify-between text-[11px] font-bold text-slate-300">
-                      <span>{funcTemplate === "homographic" ? "المعامل c = " : "المعامل c (البسط) = "}{coeffC}</span>
+                      <span>المعامل a = {coeffA}</span>
+                      <span className="font-mono text-slate-500">موجّب للتحدب</span>
                     </div>
                     <input
                       type="range" min="-5" max="5" step="1"
-                      value={coeffC}
-                      onChange={(e) => setCoeffC(parseInt(e.target.value) || 1)}
+                      value={coeffA}
+                      onChange={(e) => setCoeffA(parseInt(e.target.value) || 1)}
                       className="w-full accent-brand-emerald bg-brand-bg h-1 rounded-lg"
                     />
                   </div>
-                )}
 
-                {/* coeffD */}
-                {(funcTemplate === "homographic" || funcTemplate === "cubic" || funcTemplate === "asymptotic_rational") && (
+                  {/* coeffB */}
                   <div>
                     <div className="flex justify-between text-[11px] font-bold text-slate-300">
-                      <span>{funcTemplate === "cubic" ? "المعامل ثابت d = " : "المعامل d (المقام) = "}{coeffD}</span>
+                      <span>المعامل b = {coeffB}</span>
                     </div>
                     <input
                       type="range" min="-5" max="5" step="1"
-                      value={coeffD}
-                      onChange={(e) => setCoeffD(parseInt(e.target.value) || 0)}
+                      value={coeffB}
+                      onChange={(e) => setCoeffB(parseInt(e.target.value) || 0)}
                       className="w-full accent-brand-emerald bg-brand-bg h-1 rounded-lg"
                     />
                   </div>
-                )}
-              </div>
+
+                  {/* coeffC */}
+                  {funcTemplate !== "quadratic" && (
+                    <div>
+                      <div className="flex justify-between text-[11px] font-bold text-slate-300">
+                        <span>{funcTemplate === "homographic" ? "المعامل c = " : "المعامل c (البسط) = "}{coeffC}</span>
+                      </div>
+                      <input
+                        type="range" min="-5" max="5" step="1"
+                        value={coeffC}
+                        onChange={(e) => setCoeffC(parseInt(e.target.value) || 1)}
+                        className="w-full accent-brand-emerald bg-brand-bg h-1 rounded-lg"
+                      />
+                    </div>
+                  )}
+
+                  {/* coeffD */}
+                  {(funcTemplate === "homographic" || funcTemplate === "cubic" || funcTemplate === "asymptotic_rational") && (
+                    <div>
+                      <div className="flex justify-between text-[11px] font-bold text-slate-300">
+                        <span>{funcTemplate === "cubic" ? "المعامل ثابت d = " : "المعامل d (المقام) = "}{coeffD}</span>
+                      </div>
+                      <input
+                        type="range" min="-5" max="5" step="1"
+                        value={coeffD}
+                        onChange={(e) => setCoeffD(parseInt(e.target.value) || 0)}
+                        className="w-full accent-brand-emerald bg-brand-bg h-1 rounded-lg"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

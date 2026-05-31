@@ -64,3 +64,23 @@ body {
 .animate-pulse-border {
   animation: pulseBorder 2s infinite ease-in-out;
 }
+
+/* Remembrance Bar Marquee scroll */
+@keyframes marquee {
+  0% {
+    transform: translateX(-35%);
+  }
+  100% {
+    transform: translateX(35%);
+  }
+}
+
+.animate-marquee {
+  display: inline-block;
+  animation: marquee 80s linear infinite;
+}
+
+.hover\:pause:hover {
+  animation-play-state: paused;
+}
+

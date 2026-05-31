@@ -78,6 +78,8 @@ app.post("/api/chat", async (req, res) => {
     let geminiKey1 = "";
     let geminiKey2 = "";
     let geminiKey3 = "";
+    let groqKey = "";
+    let openrouterKey = "";
     let selectedMode = "auto";
 
     try {
@@ -88,6 +90,8 @@ app.post("/api/chat", async (req, res) => {
         if (data.geminiKey1) geminiKey1 = data.geminiKey1;
         if (data.geminiKey2) geminiKey2 = data.geminiKey2;
         if (data.geminiKey3) geminiKey3 = data.geminiKey3;
+        if (data.groqKey) groqKey = data.groqKey;
+        if (data.openrouterKey) openrouterKey = data.openrouterKey;
         if (data.selectedModel) selectedMode = data.selectedModel;
       }
     } catch (fbErr) {
@@ -99,46 +103,56 @@ app.post("/api/chat", async (req, res) => {
       if (adminKeys.geminiKey1) geminiKey1 = adminKeys.geminiKey1;
       if (adminKeys.geminiKey2) geminiKey2 = adminKeys.geminiKey2;
       if (adminKeys.geminiKey3) geminiKey3 = adminKeys.geminiKey3;
+      if (adminKeys.groqKey) groqKey = adminKeys.groqKey;
+      if (adminKeys.openrouterKey) openrouterKey = adminKeys.openrouterKey;
     }
 
-    // Rely ONLY on the 3 user-defined keys
-    const rawKeys = [geminiKey1, geminiKey2, geminiKey3].filter(k => !!k);
+    interface APIAttempt {
+      type: "gemini" | "groq" | "openrouter";
+      key: string;
+      name: string;
+    }
+
+    const available: APIAttempt[] = [];
+    if (geminiKey1) available.push({ type: "gemini", key: geminiKey1, name: "Gemini Key 1 🔑" });
+    if (geminiKey2) available.push({ type: "gemini", key: geminiKey2, name: "Gemini Key 2 🔑" });
+    if (geminiKey3) available.push({ type: "gemini", key: geminiKey3, name: "Gemini Key 3 🔑" });
+    if (groqKey) available.push({ type: "groq", key: groqKey, name: "Groq Speed ⚡" });
+    if (openrouterKey) available.push({ type: "openrouter", key: openrouterKey, name: "OpenRouter Backup 🚀" });
 
     // Determine target attempts sequence
-    let attempts: { key: string; name: string }[] = [];
+    let attempts: APIAttempt[] = [];
 
-    if (selectedMode === "key1") {
-      attempts = [{ key: geminiKey1 || rawKeys[0], name: "Gemini Key 1" }];
-    } else if (selectedMode === "key2") {
-      attempts = [{ key: geminiKey2 || rawKeys[0], name: "Gemini Key 2" }];
-    } else if (selectedMode === "key3") {
-      attempts = [{ key: geminiKey3 || rawKeys[0], name: "Gemini Key 3" }];
+    if (selectedMode === "key1" && geminiKey1) {
+      attempts = [{ type: "gemini", key: geminiKey1, name: "Gemini Key 1 🔑" }];
+    } else if (selectedMode === "key2" && geminiKey2) {
+      attempts = [{ type: "gemini", key: geminiKey2, name: "Gemini Key 2 🔑" }];
+    } else if (selectedMode === "key3" && geminiKey3) {
+      attempts = [{ type: "gemini", key: geminiKey3, name: "Gemini Key 3 🔑" }];
+    } else if (selectedMode === "groq" && groqKey) {
+      attempts = [{ type: "groq", key: groqKey, name: "Groq Speed ⚡" }];
+    } else if (selectedMode === "openrouter" && openrouterKey) {
+      attempts = [{ type: "openrouter", key: openrouterKey, name: "OpenRouter Backup 🚀" }];
     } else {
-      // Auto mode: balance among keys
-      if (rawKeys.length > 0) {
-        const startIndex = autoRotateCounter % rawKeys.length;
+      // Auto mode: balance and rotate among all configured keys
+      if (available.length > 0) {
+        const startIndex = autoRotateCounter % available.length;
         autoRotateCounter++;
         
-        for (let i = 0; i < rawKeys.length; i++) {
-          const currentKey = rawKeys[(startIndex + i) % rawKeys.length];
-          let keyName = "Gemini Rotated Key";
-          if (currentKey === geminiKey1) keyName = "Gemini Key 1 🔑";
-          else if (currentKey === geminiKey2) keyName = "Gemini Key 2 🔑";
-          else if (currentKey === geminiKey3) keyName = "Gemini Key 3 🔑";
-          attempts.push({ key: currentKey, name: keyName });
+        for (let i = 0; i < available.length; i++) {
+          attempts.push(available[(startIndex + i) % available.length]);
         }
       }
     }
 
-    if (attempts.length === 0) {
-      return res.status(400).json({ error: "No Gemini API keys are configured." });
+    // fallback just in case selection resulted in empty, but others are loaded
+    if (attempts.length === 0 && available.length > 0) {
+      attempts = [available[0]];
     }
 
-    // Format chat history for Google GenAI SDK (role: user / model)
-    const formattedHistory = history.map((h: any) => ({
-      role: h.sender === "user" ? "user" : "model",
-      parts: [{ text: h.text }]
-    }));
+    if (attempts.length === 0) {
+      return res.status(400).json({ error: "No API keys are configured." });
+    }
 
     // Find any attached image URL
     const imgRegex = /!\[.*?\]\((https:\/\/res\.cloudinary\.com\/.*?)\)/;
@@ -148,52 +162,154 @@ app.post("/api/chat", async (req, res) => {
       parsedText = "أستاذ، يرجى مراجعة هذه الصورة المرفقة والإجابة عنها تدرجياً.";
     }
 
-    const currentParts: any[] = [{ text: parsedText }];
+    let imgBase64Url = "";
+    let imgPartDataOnly = "";
+    let imgMimeType = "image/png";
 
     if (match) {
       const url = match[1];
       const imgPart = await fetchImagePart(url);
       if (imgPart) {
-        currentParts.push(imgPart);
+        imgPartDataOnly = imgPart.inlineData.data;
+        imgMimeType = imgPart.inlineData.mimeType;
+        imgBase64Url = `data:${imgMimeType};base64,${imgPartDataOnly}`;
       }
     }
 
-    const messagesToSend = [
-      ...formattedHistory,
-      { role: "user", parts: currentParts }
+    // Format chat history for Open-AI compatible endpoints (Groq, OpenRouter)
+    const openAiMessages: any[] = [
+      { role: "system", content: PROMPT_DALI_NADJIB }
     ];
+    history.forEach((h: any) => {
+      openAiMessages.push({
+        role: h.sender === "user" ? "user" : "assistant",
+        content: h.text
+      });
+    });
+
+    if (imgBase64Url) {
+      openAiMessages.push({
+        role: "user",
+        content: [
+          { type: "text", text: parsedText },
+          { type: "image_url", image_url: { url: imgBase64Url } }
+        ]
+      });
+    } else {
+      openAiMessages.push({
+        role: "user",
+        content: parsedText
+      });
+    }
+
+    // Format chat history for Google GenAI SDK (role: user / model)
+    const formattedHistory = history.map((h: any) => ({
+      role: h.sender === "user" ? "user" : "model",
+      parts: [{ text: h.text }]
+    }));
 
     let finalResponseText = "";
     let finalKeyUsedName = "";
     let lastError: any = null;
 
-    // Direct SDK call using @google/genai module
+    // Direct SDK or Fetch request calls based on provider config
     for (const attempt of attempts) {
       if (!attempt.key) continue;
 
       try {
-        const { GoogleGenAI } = await import("@google/genai");
-        const ai = new GoogleGenAI({
-          apiKey: attempt.key,
-          httpOptions: {
-            headers: {
-              "User-Agent": "aistudio-build"
+        if (attempt.type === "gemini") {
+          const { GoogleGenAI } = await import("@google/genai");
+          const ai = new GoogleGenAI({
+            apiKey: attempt.key,
+            httpOptions: {
+              headers: {
+                "User-Agent": "aistudio-build"
+              }
             }
-          }
-        });
+          });
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: messagesToSend,
-          config: {
-            systemInstruction: PROMPT_DALI_NADJIB,
-            temperature: 0.7,
+          const currentParts: any[] = [{ text: parsedText }];
+          if (imgBase64Url && imgPartDataOnly) {
+            currentParts.push({
+              inlineData: {
+                mimeType: imgMimeType,
+                data: imgPartDataOnly,
+              },
+            });
           }
-        });
 
-        finalResponseText = response.text || "";
-        finalKeyUsedName = attempt.name;
-        break;
+          const messagesToSend = [
+            ...formattedHistory,
+            { role: "user", parts: currentParts }
+          ];
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: messagesToSend,
+            config: {
+              systemInstruction: PROMPT_DALI_NADJIB,
+              temperature: 0.7,
+            }
+          });
+
+          finalResponseText = response.text || "";
+          finalKeyUsedName = attempt.name;
+          break;
+        } else if (attempt.type === "groq") {
+          const model = imgBase64Url ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile";
+          const payload = {
+            model,
+            messages: openAiMessages,
+            temperature: 0.7
+          };
+
+          const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${attempt.key}`
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Groq API returned status ${response.status}: ${errText}`);
+          }
+
+          const resData: any = await response.json();
+          finalResponseText = resData.choices?.[0]?.message?.content || "";
+          finalKeyUsedName = attempt.name;
+          break;
+        } else if (attempt.type === "openrouter") {
+          const model = "google/gemini-2.5-flash"; // default robust model with vision Support
+          const payload = {
+            model,
+            messages: openAiMessages,
+            temperature: 0.7
+          };
+
+          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${attempt.key}`,
+              "HTTP-Referer": "https://ai.studio/build",
+              "X-Title": "Dali AI Professor"
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`OpenRouter API returned status ${response.status}: ${errText}`);
+          }
+
+          const resData: any = await response.json();
+          finalResponseText = resData.choices?.[0]?.message?.content || "";
+          finalKeyUsedName = attempt.name;
+          break;
+        }
       } catch (err: any) {
         console.error(`Attempt with key (${attempt.name}) failed:`, err.message || err);
         lastError = err;
@@ -202,7 +318,7 @@ app.post("/api/chat", async (req, res) => {
 
     if (!finalResponseText && lastError) {
       return res.status(502).json({
-        error: "All configured Gemini keys failed.",
+        error: "All configured API keys failed rotation.",
         details: lastError.message || lastError
       });
     }
