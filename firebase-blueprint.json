@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "settings": {
+      "title": "Settings",
+      "description": "App settings like welcome message, Cloudinary config, and API keys",
+      "type": "object",
+      "properties": {
+        "welcomeMessage": { "type": "string" },
+        "profileImageUrl": { "type": "string" },
+        "openRouterKey": { "type": "string" },
+        "groqKey": { "type": "string" },
+        "stripeKey": { "type": "string" },
+        "selectedModel": { "type": "string" },
+        "rotationMode": { "type": "string" }
+      },
+      "required": ["welcomeMessage"]
+    },
+    "chatSession": {
+      "title": "Chat Session",
+      "description": "A chat session between a learner and Professor Dali",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastActiveAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "createdAt"]
+    },
+    "message": {
+      "title": "Message",
+      "description": "A message in a chat session",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "sender": { "type": "string", "enum": ["user", "assistant"] },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "providerUsed": { "type": "string" }
+      },
+      "required": ["sessionId", "sender", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "settings/{settingsId}": {
+      "schema": "settings",
+      "description": "Settings collection"
+    },
+    "sessions/{sessionId}": {
+      "schema": "chatSession",
+      "description": "Chat sessions collection"
+    },
+    "sessions/{sessionId}/messages/{messageId}": {
+      "schema": "message",
+      "description": "Messages inside a chat session"
+    }
+  }
+}
