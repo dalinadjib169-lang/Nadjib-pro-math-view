@@ -51,15 +51,33 @@ interface ChatLayoutProps {
 
 export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [settings, setSettings] = useState<GlobalSettings>({
-    welcomeMessage: "مرحبا خويا اختي صلي على محمد معاك الاستاذ دالي نجيب \nكيف يمكنني مساعدتك \n😊",
-    profileImageUrl: "/file_00000000b2a07246a9f99a38ebc67182.png",
-    geminiKey1: "",
-    geminiKey2: "",
-    geminiKey3: "",
-    selectedModel: "auto",
-    cloudinaryCloudName: "doaxziqm7",
-    cloudinaryUploadPreset: "nadjib dali"
+  const [settings, setSettings] = useState<GlobalSettings>(() => {
+    const cached = localStorage.getItem("dali_settings");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        return {
+          welcomeMessage: parsed.welcomeMessage || "مرحبا خويا اختي صلي على محمد معاك الاستاذ دالي نجيب \nكيف يمكنني مساعدتك \n😊",
+          profileImageUrl: parsed.profileImageUrl || "/file_00000000b2a07246a9f99a38ebc67182.png",
+          geminiKey1: "",
+          geminiKey2: "",
+          geminiKey3: "",
+          selectedModel: parsed.selectedModel || "auto",
+          cloudinaryCloudName: parsed.cloudinaryCloudName || "doaxziqm7",
+          cloudinaryUploadPreset: parsed.cloudinaryUploadPreset || "nadjib dali"
+        };
+      } catch (e) {}
+    }
+    return {
+      welcomeMessage: "مرحبا خويا اختي صلي على محمد معاك الاستاذ دالي نجيب \nكيف يمكنني مساعدتك \n😊",
+      profileImageUrl: "/file_00000000b2a07246a9f99a38ebc67182.png",
+      geminiKey1: "",
+      geminiKey2: "",
+      geminiKey3: "",
+      selectedModel: "auto",
+      cloudinaryCloudName: "doaxziqm7",
+      cloudinaryUploadPreset: "nadjib dali"
+    };
   });
 
   // Cloudinary Cloud Settings
@@ -86,7 +104,11 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
     const unsubscribe = onSnapshot(settingsRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        setSettings(prev => ({ ...prev, ...data }));
+        setSettings(prev => {
+          const updated = { ...prev, ...data };
+          localStorage.setItem("dali_settings", JSON.stringify(updated));
+          return updated;
+        });
       }
     });
 

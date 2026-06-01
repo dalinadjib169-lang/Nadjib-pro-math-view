@@ -101,11 +101,6 @@ app.post("/api/chat", async (req, res) => {
       const settingsSnap = await Promise.race([fetchPromise, timeoutPromise]);
       if (settingsSnap && settingsSnap.exists()) {
         const data = settingsSnap.data();
-        if (data.geminiKey1) geminiKey1 = data.geminiKey1;
-        if (data.geminiKey2) geminiKey2 = data.geminiKey2;
-        if (data.geminiKey3) geminiKey3 = data.geminiKey3;
-        if (data.groqKey) groqKey = data.groqKey;
-        if (data.openrouterKey) openrouterKey = data.openrouterKey;
         if (data.selectedModel) selectedMode = data.selectedModel;
       }
     } catch (fbErr) {
