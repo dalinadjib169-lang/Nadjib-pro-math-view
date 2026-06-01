@@ -78,7 +78,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 // API Route: Chats inside Dali Nadjib AI
 app.post("/api/chat", async (req, res) => {
   try {
-    const { message, history, adminKeys } = req.body;
+    const { message, history, adminKeys, selectedModel } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: "Message is required" });
@@ -93,21 +93,29 @@ app.post("/api/chat", async (req, res) => {
     let geminiKey3 = process.env.GEMINI_API_KEY_3 || process.env.GEMINI_KEY_3 || process.env.VITE_GEMINI_API_KEY_3 || "";
     let groqKey = process.env.GROQ_API_KEY || process.env.GROQ_KEY || process.env.VITE_GROQ_API_KEY || "";
     let openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || process.env.VITE_OPENROUTER_API_KEY || "";
-    let selectedMode = process.env.SELECTED_MODEL || process.env.SELECTED_MODE || process.env.VITE_SELECTED_MODEL || "auto";
+    
+    // Optimize: Use client-supplied selectedModel directly to make response lightning-fast and avoid server-side Firestore overhead!
+    let selectedMode = selectedModel || "";
 
-    try {
-      const settingsRef = doc(db, "settings", "global");
-      // Use Promise.race with a strict 1.2s timeout so slow or misconfigured Firestore does not hang the service
-      const fetchPromise = getDoc(settingsRef);
-      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
+    if (!selectedMode) {
+      try {
+        const settingsRef = doc(db, "settings", "global");
+        // Use Promise.race with a strict 800ms timeout so slow or misconfigured Firestore does not hang the service
+        const fetchPromise = getDoc(settingsRef);
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 800));
 
-      const settingsSnap = await Promise.race([fetchPromise, timeoutPromise]);
-      if (settingsSnap && settingsSnap.exists()) {
-        const data = settingsSnap.data();
-        if (data.selectedModel) selectedMode = data.selectedModel;
+        const settingsSnap = await Promise.race([fetchPromise, timeoutPromise]);
+        if (settingsSnap && settingsSnap.exists()) {
+          const data = settingsSnap.data();
+          if (data.selectedModel) selectedMode = data.selectedModel;
+        }
+      } catch (fbErr) {
+        console.warn("Could not read Firestore settings directly on server.", fbErr);
       }
-    } catch (fbErr) {
-      console.warn("Could not read Firestore settings directly on server.", fbErr);
+    }
+
+    if (!selectedMode) {
+      selectedMode = process.env.SELECTED_MODEL || process.env.SELECTED_MODE || process.env.VITE_SELECTED_MODEL || "auto";
     }
 
     // Override keys if explicitly passed by admin
@@ -388,4 +396,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

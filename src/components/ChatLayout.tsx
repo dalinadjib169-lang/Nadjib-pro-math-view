@@ -256,7 +256,8 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
         },
         body: JSON.stringify({
           message: queryText,
-          history: apiHistory
+          history: apiHistory,
+          selectedModel: settings.selectedModel
         })
       });
 
@@ -381,7 +382,8 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
         },
         body: JSON.stringify({
           message: displayMessageText,
-          history: apiHistory
+          history: apiHistory,
+          selectedModel: settings.selectedModel
         })
       });
 
