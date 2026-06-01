@@ -63,6 +63,15 @@ async function fetchImagePart(url: string) {
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout: ${label} took more than ${timeoutMs}ms`)), timeoutMs)
+    )
+  ]);
+}
+
 // API Route: Chats inside Dali Nadjib AI
 app.post("/api/chat", async (req, res) => {
   try {
@@ -72,20 +81,25 @@ app.post("/api/chat", async (req, res) => {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    // 1. Resolve API Keys. Order of priority:
-    //    a) Admin Keys sent directly (authenticated admins)
-    //    b) Firestore custom config in settings/global
-    let geminiKey1 = "";
-    let geminiKey2 = "";
-    let geminiKey3 = "";
-    let groqKey = "";
-    let openrouterKey = "";
-    let selectedMode = "auto";
+    // 1. Resolve API Keys. Multi-factor strategy with fallback:
+    //    a) Vercel / environment parameters loaded in process.env
+    //    b) Dynamic settings customized inside Firestore
+    //    c) Client-supplied override parameters (if any)
+    let geminiKey1 = process.env.GEMINI_API_KEY_1 || process.env.GEMINI_KEY_1 || process.env.GEMINI_API_KEY || "";
+    let geminiKey2 = process.env.GEMINI_API_KEY_2 || process.env.GEMINI_KEY_2 || "";
+    let geminiKey3 = process.env.GEMINI_API_KEY_3 || process.env.GEMINI_KEY_3 || "";
+    let groqKey = process.env.GROQ_API_KEY || process.env.GROQ_KEY || "";
+    let openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || "";
+    let selectedMode = process.env.SELECTED_MODEL || process.env.SELECTED_MODE || "auto";
 
     try {
       const settingsRef = doc(db, "settings", "global");
-      const settingsSnap = await getDoc(settingsRef);
-      if (settingsSnap.exists()) {
+      // Use Promise.race with a strict 1.2s timeout so slow or misconfigured Firestore does not hang the service
+      const fetchPromise = getDoc(settingsRef);
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
+
+      const settingsSnap = await Promise.race([fetchPromise, timeoutPromise]);
+      if (settingsSnap && settingsSnap.exists()) {
         const data = settingsSnap.data();
         if (data.geminiKey1) geminiKey1 = data.geminiKey1;
         if (data.geminiKey2) geminiKey2 = data.geminiKey2;
@@ -248,7 +262,7 @@ app.post("/api/chat", async (req, res) => {
             { role: "user", parts: currentParts }
           ];
 
-          const response = await ai.models.generateContent({
+          const apiCall = ai.models.generateContent({
             model: "gemini-3.5-flash",
             contents: messagesToSend,
             config: {
@@ -256,6 +270,8 @@ app.post("/api/chat", async (req, res) => {
               temperature: 0.7,
             }
           });
+          // Cap Gemini request to 6.5s to prevent hanging the chat flow
+          const response = await withTimeout(apiCall, 6500, "Gemini API");
 
           finalResponseText = response.text || "";
           finalKeyUsedName = attempt.name;
@@ -268,7 +284,7 @@ app.post("/api/chat", async (req, res) => {
             temperature: 0.7
           };
 
-          const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          const fetchCall = fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -276,6 +292,8 @@ app.post("/api/chat", async (req, res) => {
             },
             body: JSON.stringify(payload)
           });
+          // Cap Groq API request to 5s to maintain ultra speed
+          const response = await withTimeout(fetchCall, 5000, "Groq API");
 
           if (!response.ok) {
             const errText = await response.text();
@@ -294,7 +312,7 @@ app.post("/api/chat", async (req, res) => {
             temperature: 0.7
           };
 
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          const fetchCall = fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -304,6 +322,8 @@ app.post("/api/chat", async (req, res) => {
             },
             body: JSON.stringify(payload)
           });
+          // Cap OpenRouter API request to 6s
+          const response = await withTimeout(fetchCall, 6000, "OpenRouter API");
 
           if (!response.ok) {
             const errText = await response.text();
