@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
@@ -12,8 +13,15 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Initialize server-side firebase instance to load settings
-import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
+// Initialize server-side firebase instance to load settings safely using FS to avoid unstable import assertions on Vercel
+let firebaseConfig: any = {};
+try {
+  const rawConfig = fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8");
+  firebaseConfig = JSON.parse(rawConfig);
+} catch (err) {
+  console.error("Failed to read firebase-applet-config.json:", err);
+}
+
 const fbApp = initializeApp(firebaseConfig);
 const firestoreDbId = (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)") 
   ? firebaseConfig.firestoreDatabaseId 
@@ -47,6 +55,7 @@ Core Writing/Dialect Guidelines:
 
 // Simple in-memory tracker to rotate keys if set to "auto"
 let autoRotateCounter = 0;
+const deadKeys = new Set<string>(); // Keep track of permanently failed/leaked/unauthorized keys in memory to make future responses instant
 
 async function fetchImagePart(url: string) {
   try {
@@ -170,12 +179,26 @@ app.post("/api/chat", async (req, res) => {
       }
     }
 
-    // fallback just in case selection resulted in empty, but others are loaded
-    if (attempts.length === 0 && available.length > 0) {
-      attempts = [available[0]];
+    // Enrich with other configured fallbacks so that if the user's selected key has issues, we can auto-recover
+    const attemptedKeysKeys = new Set(attempts.map(a => a.key));
+    available.forEach(av => {
+      if (!attemptedKeysKeys.has(av.key)) {
+        attempts.push(av);
+      }
+    });
+
+    // Append standard platform Gemini API key as a backstop if not already added
+    if (process.env.GEMINI_API_KEY && !attempts.some(a => a.key === process.env.GEMINI_API_KEY)) {
+      attempts.push({ type: "gemini", key: process.env.GEMINI_API_KEY, name: "مفتاح المنصة الاحتياطي 🔑" });
     }
 
-    if (attempts.length === 0) {
+    // Filter out any known dead keys (e.g. reported as leaked, invalid, or expired)
+    const validAttempts = attempts.filter(a => !deadKeys.has(a.key));
+    
+    // Fallback to all attempted queue if all got flagged as dead (failsafe)
+    const finalAttemptsToRun = validAttempts.length > 0 ? validAttempts : attempts;
+
+    if (finalAttemptsToRun.length === 0) {
       return res.status(400).json({ error: "No API keys are configured." });
     }
 
@@ -238,7 +261,7 @@ app.post("/api/chat", async (req, res) => {
     let lastError: any = null;
 
     // Direct SDK or Fetch request calls based on provider config
-    for (const attempt of attempts) {
+    for (const attempt of finalAttemptsToRun) {
       if (!attempt.key) continue;
 
       try {
@@ -344,6 +367,21 @@ app.post("/api/chat", async (req, res) => {
       } catch (err: any) {
         console.error(`Attempt with key (${attempt.name}) failed:`, err.message || err);
         lastError = err;
+
+        // Automatically black-list dead/revoked/leaked keys from future attempts
+        const errMsg = (err.message || String(err)).toLowerCase();
+        if (
+          errMsg.includes("leaked") ||
+          errMsg.includes("permission_denied") ||
+          errMsg.includes("403") ||
+          errMsg.includes("401") ||
+          errMsg.includes("invalid key") ||
+          errMsg.includes("api_key_invalid") ||
+          errMsg.includes("key was reported")
+        ) {
+          console.warn(`[Key Shield] Flagging key from ${attempt.name} as offline/dead based on security/auth error.`);
+          deadKeys.add(attempt.key);
+        }
       }
     }
 
