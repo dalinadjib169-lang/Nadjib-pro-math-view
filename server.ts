@@ -85,12 +85,12 @@ app.post("/api/chat", async (req, res) => {
     //    a) Vercel / environment parameters loaded in process.env
     //    b) Dynamic settings customized inside Firestore
     //    c) Client-supplied override parameters (if any)
-    let geminiKey1 = process.env.GEMINI_API_KEY_1 || process.env.GEMINI_KEY_1 || process.env.GEMINI_API_KEY || "";
-    let geminiKey2 = process.env.GEMINI_API_KEY_2 || process.env.GEMINI_KEY_2 || "";
-    let geminiKey3 = process.env.GEMINI_API_KEY_3 || process.env.GEMINI_KEY_3 || "";
-    let groqKey = process.env.GROQ_API_KEY || process.env.GROQ_KEY || "";
-    let openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || "";
-    let selectedMode = process.env.SELECTED_MODEL || process.env.SELECTED_MODE || "auto";
+    let geminiKey1 = process.env.GEMINI_API_KEY_1 || process.env.GEMINI_KEY_1 || process.env.VITE_GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || "";
+    let geminiKey2 = process.env.GEMINI_API_KEY_2 || process.env.GEMINI_KEY_2 || process.env.VITE_GEMINI_API_KEY_2 || "";
+    let geminiKey3 = process.env.GEMINI_API_KEY_3 || process.env.GEMINI_KEY_3 || process.env.VITE_GEMINI_API_KEY_3 || "";
+    let groqKey = process.env.GROQ_API_KEY || process.env.GROQ_KEY || process.env.VITE_GROQ_API_KEY || "";
+    let openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || process.env.VITE_OPENROUTER_API_KEY || "";
+    let selectedMode = process.env.SELECTED_MODEL || process.env.SELECTED_MODE || process.env.VITE_SELECTED_MODEL || "auto";
 
     try {
       const settingsRef = doc(db, "settings", "global");
@@ -270,8 +270,8 @@ app.post("/api/chat", async (req, res) => {
               temperature: 0.7,
             }
           });
-          // Cap Gemini request to 6.5s to prevent hanging the chat flow
-          const response = await withTimeout(apiCall, 6500, "Gemini API");
+          // Cap Gemini request to 20s to prevent hitting false timeout limits on complex explanations
+          const response = await withTimeout(apiCall, 20000, "Gemini API");
 
           finalResponseText = response.text || "";
           finalKeyUsedName = attempt.name;
@@ -292,8 +292,8 @@ app.post("/api/chat", async (req, res) => {
             },
             body: JSON.stringify(payload)
           });
-          // Cap Groq API request to 5s to maintain ultra speed
-          const response = await withTimeout(fetchCall, 5000, "Groq API");
+          // Cap Groq API request to 15s to maintain robust response window
+          const response = await withTimeout(fetchCall, 15000, "Groq API");
 
           if (!response.ok) {
             const errText = await response.text();
@@ -322,8 +322,8 @@ app.post("/api/chat", async (req, res) => {
             },
             body: JSON.stringify(payload)
           });
-          // Cap OpenRouter API request to 6s
-          const response = await withTimeout(fetchCall, 6000, "OpenRouter API");
+          // Cap OpenRouter API request to 20s to sustain slow model responses
+          const response = await withTimeout(fetchCall, 20000, "OpenRouter API");
 
           if (!response.ok) {
             const errText = await response.text();

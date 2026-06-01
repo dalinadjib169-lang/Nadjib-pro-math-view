@@ -17,10 +17,13 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && isEmailVerified() && (
-        request.auth.token.email.lower() == "dalind1990@gmail.com" ||
-        request.auth.token.email.lower() == "dalinadjib169@gmail.com" ||
-        request.auth.token.email.lower() == "dalinadjib1990@gmail.com"
+      return isSignedIn() && (
+        request.auth.token.email == "dalind1990@gmail.com" ||
+        request.auth.token.email == "dalinadjib169@gmail.com" ||
+        request.auth.token.email == "dalinadjib1990@gmail.com" ||
+        request.auth.token.email == "Dalind1990@gmail.com" ||
+        request.auth.token.email == "Dalinadjib169@gmail.com" ||
+        request.auth.token.email == "Dalinadjib1990@gmail.com"
       );
     }
 
