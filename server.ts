@@ -3,8 +3,6 @@ import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
 
 dotenv.config();
 
@@ -12,21 +10,6 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
-
-// Initialize server-side firebase instance to load settings safely using FS to avoid unstable import assertions on Vercel
-let firebaseConfig: any = {};
-try {
-  const rawConfig = fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8");
-  firebaseConfig = JSON.parse(rawConfig);
-} catch (err) {
-  console.error("Failed to read firebase-applet-config.json:", err);
-}
-
-const fbApp = initializeApp(firebaseConfig);
-const firestoreDbId = (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)") 
-  ? firebaseConfig.firestoreDatabaseId 
-  : undefined;
-const db = getFirestore(fbApp, firestoreDbId);
 
 const PROMPT_DALI_NADJIB = `
 You are Professor Dali Nadjib (الاستاذ دالي نجيب), a highly respected Algerian math teacher and expert AI programmer.
@@ -75,6 +58,40 @@ async function fetchImagePart(url: string) {
   }
 }
 
+function cleanGeminiHistory(history: any[]) {
+  const result: any[] = [];
+  let expectedRole = "user";
+
+  for (const item of history) {
+    if (!item.text) continue;
+    const role = item.sender === "user" ? "user" : "model";
+    if (role === expectedRole) {
+      result.push({
+        role,
+        parts: [{ text: item.text }]
+      });
+      expectedRole = expectedRole === "user" ? "model" : "user";
+    } else {
+      if (result.length > 0) {
+        const lastMsg = result[result.length - 1];
+        lastMsg.parts[0].text += "\n" + item.text;
+      } else if (role === "user") {
+        result.push({
+          role,
+          parts: [{ text: item.text }]
+        });
+        expectedRole = "model";
+      }
+    }
+  }
+
+  while (result.length > 0 && result[result.length - 1].role !== "model") {
+    result.pop();
+  }
+
+  return result;
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return Promise.race([
     promise,
@@ -104,28 +121,7 @@ app.post("/api/chat", async (req, res) => {
     let openrouterKey = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || process.env.VITE_OPENROUTER_API_KEY || "";
     
     // Optimize: Use client-supplied selectedModel directly to make response lightning-fast and avoid server-side Firestore overhead!
-    let selectedMode = selectedModel || "";
-
-    if (!selectedMode) {
-      try {
-        const settingsRef = doc(db, "settings", "global");
-        // Use Promise.race with a strict 800ms timeout so slow or misconfigured Firestore does not hang the service
-        const fetchPromise = getDoc(settingsRef);
-        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 800));
-
-        const settingsSnap = await Promise.race([fetchPromise, timeoutPromise]);
-        if (settingsSnap && settingsSnap.exists()) {
-          const data = settingsSnap.data();
-          if (data.selectedModel) selectedMode = data.selectedModel;
-        }
-      } catch (fbErr) {
-        console.warn("Could not read Firestore settings directly on server.", fbErr);
-      }
-    }
-
-    if (!selectedMode) {
-      selectedMode = process.env.SELECTED_MODEL || process.env.SELECTED_MODE || process.env.VITE_SELECTED_MODEL || "auto";
-    }
+    let selectedMode = selectedModel || process.env.SELECTED_MODEL || process.env.SELECTED_MODE || process.env.VITE_SELECTED_MODEL || "auto";
 
     // Override keys if explicitly passed by admin
     if (adminKeys) {
@@ -250,11 +246,8 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    // Format chat history for Google GenAI SDK (role: user / model)
-    const formattedHistory = history.map((h: any) => ({
-      role: h.sender === "user" ? "user" : "model",
-      parts: [{ text: h.text }]
-    }));
+    // Format chat history for Google GenAI SDK (role: user / model) conforming to strict alternation
+    const formattedHistory = cleanGeminiHistory(history || []);
 
     let finalResponseText = "";
     let finalKeyUsedName = "";
@@ -299,8 +292,8 @@ app.post("/api/chat", async (req, res) => {
               temperature: 0.7,
             }
           });
-          // Cap Gemini request to 20s to prevent hitting false timeout limits on complex explanations
-          const response = await withTimeout(apiCall, 20000, "Gemini API");
+          // Cap Gemini request to 5s to maintain ultra-fast responsive window
+          const response = await withTimeout(apiCall, 5000, "Gemini API");
 
           finalResponseText = response.text || "";
           finalKeyUsedName = attempt.name;
@@ -321,8 +314,8 @@ app.post("/api/chat", async (req, res) => {
             },
             body: JSON.stringify(payload)
           });
-          // Cap Groq API request to 15s to maintain robust response window
-          const response = await withTimeout(fetchCall, 15000, "Groq API");
+          // Cap Groq API request to 5s to maintain robust response window with fallback
+          const response = await withTimeout(fetchCall, 5000, "Groq API");
 
           if (!response.ok) {
             const errText = await response.text();
@@ -351,8 +344,8 @@ app.post("/api/chat", async (req, res) => {
             },
             body: JSON.stringify(payload)
           });
-          // Cap OpenRouter API request to 20s to sustain slow model responses
-          const response = await withTimeout(fetchCall, 20000, "OpenRouter API");
+          // Cap OpenRouter API request to 5s to sustain slow model responses
+          const response = await withTimeout(fetchCall, 5000, "OpenRouter API");
 
           if (!response.ok) {
             const errText = await response.text();
