@@ -4,7 +4,9 @@ import {
   auth, 
   googleProvider, 
   isUserAdmin, 
-  ALLOWED_ADMIN_EMAILS 
+  ALLOWED_ADMIN_EMAILS,
+  handleFirestoreError,
+  OperationType
 } from "../firebase";
 import { 
   signInWithPopup, 
@@ -140,8 +142,11 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
         await setDoc(docRef, initPayload);
         localStorage.setItem("dali_settings", JSON.stringify({ ...settings, ...initPayload }));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error loading settings from database:", err);
+      if (err.message?.includes("permission") || err.message?.includes("Missing or insufficient permissions")) {
+        handleFirestoreError(err, OperationType.GET, "settings/global");
+      }
     }
   }
 
@@ -157,8 +162,11 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
         msgTotal += msgSnap.size;
       }
       setMessagesCount(msgTotal || sessionsSnap.size * 5); // Fallback calculation if empty
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error loading chat metrics:", err);
+      if (err.message?.includes("permission") || err.message?.includes("Missing or insufficient permissions")) {
+        handleFirestoreError(err, OperationType.GET, "sessions");
+      }
     } finally {
       setIsLoadingAnalytics(false);
     }
@@ -187,28 +195,57 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
 
     try {
       const docRef = doc(db, "settings", "global");
+      
+      // Read the absolute latest Firestore settings to make sure we don't overwrite a custom profile image
+      let dbImageUrl = "";
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const dbData = docSnap.data();
+          if (dbData.profileImageUrl) {
+            dbImageUrl = dbData.profileImageUrl;
+          }
+        }
+      } catch (err) {
+        console.warn("Could not read Firestore profile image for validation pre-save:", err);
+      }
+
+      // Determine profile image URL to persist:
+      // If the current settings state has the placeholder/default image, but Firestore has a custom uploaded Cloudinary/HTTP URL, keep the custom one!
+      let finalProfileImageUrl = settings.profileImageUrl;
+      if ((!finalProfileImageUrl || finalProfileImageUrl === "/file_00000000b2a07246a9f99a38ebc67182.png") && dbImageUrl && (dbImageUrl.startsWith("http") || dbImageUrl.includes("cloudinary"))) {
+        finalProfileImageUrl = dbImageUrl;
+      }
+
       const savePayload = {
         welcomeMessage: settings.welcomeMessage,
-        profileImageUrl: settings.profileImageUrl,
+        profileImageUrl: finalProfileImageUrl,
         selectedModel: settings.selectedModel,
         cloudinaryCloudName: settings.cloudinaryCloudName,
         cloudinaryUploadPreset: settings.cloudinaryUploadPreset
       };
       await setDoc(docRef, savePayload, { merge: true });
       
-      // Update local storage representation instantly
-      localStorage.setItem("dali_settings", JSON.stringify({
-        ...settings,
-        ...savePayload
-      }));
+      // Update local state and local storage representation instantly
+      setSettings(prev => {
+        const updated = {
+          ...prev,
+          ...savePayload
+        };
+        localStorage.setItem("dali_settings", JSON.stringify(updated));
+        return updated;
+      });
 
       setSaveSuccess(true);
       if (onSettingsSaved) {
-        onSettingsSaved(settings);
+        onSettingsSaved({ ...settings, ...savePayload });
       }
       setTimeout(() => setSaveSuccess(false), 4000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error saving global credentials:", err);
+      if (err.message?.includes("permission") || err.message?.includes("Missing or insufficient permissions")) {
+        handleFirestoreError(err, OperationType.WRITE, "settings/global");
+      }
       alert("خطأ أثناء حفظ الإعدادات: تأكد من صلاحيات قاعدة البيانات!");
     } finally {
       setSaving(false);
@@ -260,6 +297,9 @@ export default function AdminDashboard({ onBackToApp, onSettingsSaved }: AdminDa
       
     } catch (err: any) {
       console.error("Cloudinary Upload Error:", err);
+      if (err.message?.includes("permission") || err.message?.includes("Missing or insufficient permissions")) {
+        handleFirestoreError(err, OperationType.WRITE, "settings/global");
+      }
       setUploadError("فشل تحميل الصورة. يرجى مراجعة إعدادات كلاوديناري.");
     } finally {
       setUploadingImage(false);

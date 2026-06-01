@@ -3,7 +3,9 @@ import {
   db, 
   auth, 
   googleProvider, 
-  isUserAdmin 
+  isUserAdmin,
+  handleFirestoreError,
+  OperationType
 } from "../firebase";
 import { signInWithPopup, signOut, onAuthStateChanged, User } from "firebase/auth";
 import { 
@@ -109,6 +111,12 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
           localStorage.setItem("dali_settings", JSON.stringify(updated));
           return updated;
         });
+      }
+    }, (error) => {
+      console.warn("Could not synchronize settings from Firestore:", error);
+      // Fallback: If it's a security/permission error, use our standard handler
+      if (error.message.includes("permission") || error.message.includes("Missing or insufficient permissions")) {
+        handleFirestoreError(error, OperationType.GET, "settings/global");
       }
     });
 
@@ -226,8 +234,11 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
           createdAt: new Date().toISOString()
         });
       }
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       console.warn("Could not write msg to firestore directly:", dbErr);
+      if (dbErr.message?.includes("permission") || dbErr.message?.includes("Missing or insufficient permissions")) {
+        handleFirestoreError(dbErr, OperationType.WRITE, `sessions/${currentUser?.uid}`);
+      }
     }
 
     try {
@@ -346,8 +357,11 @@ export default function ChatLayout({ onOpenAdmin }: ChatLayoutProps) {
           createdAt: new Date().toISOString()
         });
       }
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       console.warn("Could not write msg to firestore directly:", dbErr);
+      if (dbErr.message?.includes("permission") || dbErr.message?.includes("Missing or insufficient permissions")) {
+        handleFirestoreError(dbErr, OperationType.WRITE, `sessions/${currentUser?.uid}`);
+      }
     }
 
     try {

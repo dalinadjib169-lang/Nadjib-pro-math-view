@@ -15,7 +15,10 @@ app.use(express.json());
 // Initialize server-side firebase instance to load settings
 import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
 const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId);
+const firestoreDbId = (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== "(default)") 
+  ? firebaseConfig.firestoreDatabaseId 
+  : undefined;
+const db = getFirestore(fbApp, firestoreDbId);
 
 const PROMPT_DALI_NADJIB = `
 You are Professor Dali Nadjib (الاستاذ دالي نجيب), a highly respected Algerian math teacher and expert AI programmer.
