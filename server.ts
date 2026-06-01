@@ -120,6 +120,11 @@ app.post("/api/chat", async (req, res) => {
     if (groqKey) available.push({ type: "groq", key: groqKey, name: "Groq Speed ⚡" });
     if (openrouterKey) available.push({ type: "openrouter", key: openrouterKey, name: "OpenRouter Backup 🚀" });
 
+    // Fallback to platform-supplied standard Gemini API key if no custom keys are configured in Firestore settings
+    if (available.length === 0 && process.env.GEMINI_API_KEY) {
+      available.push({ type: "gemini", key: process.env.GEMINI_API_KEY, name: "مفتاح المنصة الافتراضي 🔑" });
+    }
+
     // Determine target attempts sequence
     let attempts: APIAttempt[] = [];
 
