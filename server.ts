@@ -379,9 +379,47 @@ app.post("/api/chat", async (req, res) => {
     }
 
     if (!finalResponseText && lastError) {
-      return res.status(502).json({
-        error: "All configured API keys failed rotation.",
-        details: lastError.message || lastError
+      const errorText = (lastError.message || String(lastError)).toLowerCase();
+      let arabicExplanation = "بارك الله فيك يا بني، عذراً هناك خلل مؤقت في اتصالات مفاتيح الذكاء الاصطناعي (Gemini) حالياً. الأستاذ دالي يحاول معالجته، صلي على محمد و عاود التجربة بعد لحظات.";
+      
+      if (errorText.includes("leaked") || errorText.includes("leak")) {
+        arabicExplanation = `⚠️ **تنبيه أمني هام جداً من أستاذك دالي نجيب** ⚠️
+
+يا بني، لقد تم **تسريب مفتاح الـ API الخاص بك** (Google leaked key) وتم تجميده وتعطيله بالكامل من طرف شركة Google لحمايتك! 
+
+📌 **الحل السريع والأكيد لتشغيل الذكاء الاصطناعي بنجاح مئة بالمئة:**
+
+1️⃣ اذهب إلى منصة **Google AI Studio** الخاصة بك.
+2️⃣ قم بإنشاء مفتاح ذكي جديد بالكامل (Create API Key).
+3️⃣ افتح **لوحة التحكم ⚙️** في هذا التطبيق وانسخ المفتاح الجديد ووضعه في خانة **مفتاح Gemini الذكي الأول** ثم احفظ التغييرات.
+
+صلي على النبي محمد وافعل ذلك، وبإذن الله سأجيبك فوراً وبسرعة فائقة! ⚡
+
+لا تنسونا من صالح دعائكم`;
+      } else if (
+        errorText.includes("permission_denied") || 
+        errorText.includes("403") || 
+        errorText.includes("401") || 
+        errorText.includes("invalid") || 
+        errorText.includes("api_key_invalid")
+      ) {
+        arabicExplanation = `⚠️ **خطأ في صلاحيات مفتاح الذكاء الاصطناعي** ⚠️
+
+يا بني، مفتاح الـ API الخاص بـ Gemini حالياً غير صالح أو غير معتمد (Invalid/Expired API Key) من طرف المزود.
+
+📌 **لتصحيح الأمر فوراً:**
+
+1️⃣ تأكد من إنشاء مفتاح صالح ومكتمل من خلال **Google AI Studio**.
+2️⃣ افتح **لوحة التحكم ⚙️** في هذا التطبيق، ضع المفتاح الجديد، ثم احفظ الإعدادات.
+
+صلي على النبي محمد وجرب مجدداً، أستاذك في انتظارك للشرح والتبسيط الفوري!
+
+لا تنسونا من صالح دعائكم`;
+      }
+
+      return res.json({
+        text: arabicExplanation,
+        provider: "درع حماية الأستاذ دالي 🛡️"
       });
     }
 
